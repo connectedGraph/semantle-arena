@@ -11,7 +11,6 @@ interface Props {
   onToggleTheme: () => void;
   dark: boolean;
   meta: Meta | null;
-  locked: boolean;
   phase: "idle" | "running" | "finished";
   tier: Tier;
   onTierChange: (t: Tier) => void;
@@ -20,92 +19,76 @@ interface Props {
 const LENGTHS = [2, 3, 4];
 const STEPS = [12, 30, 50];
 
-/** 档位的展示名与一句话说明，鼠标悬停时给提示 */
-const TIER_LABELS: Record<Tier, { name: string; hint: string }> = {
-  small: { name: "精简", hint: "3000 个日常具象词，抽到的你都认识" },
-  medium: { name: "标准", hint: "8000 词，够玩又有一定挑战" },
-  full: { name: "完整", hint: "1.6 万词，会抽到冷门词" },
+const TIER_LABELS: Record<Tier, string> = {
+  small: "精简",
+  medium: "标准",
+  full: "完整",
 };
 
+/**
+ * 顶部控制条。
+ *
+ * 这里所有控件在对局中都可用——改了就换一局，而不是灰掉。
+ * 灰掉的控件意味着「你得先结束才能改」，那是一次无谓的额外操作。
+ */
 export function Header(props: Props) {
   const { mode, onModeChange, length, onLengthChange, maxSteps, onMaxStepsChange,
-          onNew, onToggleTheme, dark, meta, locked, phase,
+          onNew, onToggleTheme, dark, meta, phase,
           tier, onTierChange } = props;
 
   const tierCounts = meta?.tiers ?? {};
+  const poolCount = meta?.pool.count;
 
   return (
     <header className="sticky top-0 z-20 border-b border-[rgb(var(--border))] bg-[rgb(var(--bg-veil))]/70 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-5 gap-y-2 px-5 py-2.5">
-        <div className="flex items-baseline gap-2.5">
-          <h1 className="text-[17px] font-semibold tracking-tight">
-            <span className="text-gradient">Semantle</span>
-            <span className="ml-1 text-[rgb(var(--fg-muted))]">Arena</span>
-          </h1>
-          <span className="hidden text-[11px] text-[rgb(var(--fg-faint))] sm:inline">
-            人机语义猜词对抗
-          </span>
-        </div>
+      <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
+        <h1 className="mr-1 flex items-baseline gap-2 text-[16px] font-semibold tracking-tight">
+          <span className="text-gradient">Semantle</span>
+          <span className="text-[rgb(var(--fg-muted))]">Arena</span>
+        </h1>
 
         <div className="segmented" role="group" aria-label="模式">
-          <button aria-pressed={mode === "versus"} disabled={locked}
-                  onClick={() => onModeChange("versus")}>
+          <button aria-pressed={mode === "versus"} onClick={() => onModeChange("versus")}>
             人机对战
           </button>
-          <button aria-pressed={mode === "challenge"} disabled={locked}
-                  onClick={() => onModeChange("challenge")}>
+          <button aria-pressed={mode === "challenge"} onClick={() => onModeChange("challenge")}>
             我出题
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-[rgb(var(--fg-faint))]">词库</span>
-          <div className="segmented" role="group" aria-label="词库档位">
-            {(["small", "medium", "full"] as Tier[]).map((t) => (
-              <button key={t} aria-pressed={tier === t} disabled={locked}
-                      onClick={() => onTierChange(t)}
-                      title={TIER_LABELS[t].hint}>
-                {TIER_LABELS[t].name}
-                {tierCounts[t] ? (
-                  <span className="ml-1 opacity-45">
-                    {Math.round(tierCounts[t] / 100) / 10}k
-                  </span>
-                ) : null}
-              </button>
-            ))}
-          </div>
-        </div>
+        <Group label="词库">
+          {(["small", "medium", "full"] as Tier[]).map((t) => (
+            <button key={t} aria-pressed={tier === t} onClick={() => onTierChange(t)}
+                    title={`${(tierCounts[t] ?? 0).toLocaleString()} 词`}>
+              {TIER_LABELS[t]}
+            </button>
+          ))}
+        </Group>
 
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-[rgb(var(--fg-faint))]">答案</span>
-          <div className="segmented" role="group" aria-label="谜底字数">
-            {LENGTHS.map((n) => (
-              <button key={n} aria-pressed={length === n} disabled={locked}
-                      onClick={() => onLengthChange(n)}>
-                {n} 字
-              </button>
-            ))}
-          </div>
-        </div>
+        <Group label="字数">
+          {LENGTHS.map((n) => (
+            <button key={n} aria-pressed={length === n} onClick={() => onLengthChange(n)}>
+              {n}
+            </button>
+          ))}
+        </Group>
 
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-[rgb(var(--fg-faint))]">步数</span>
-          <div className="segmented" role="group" aria-label="Agent 步数上限">
+        {mode === "versus" && (
+          <Group label="Agent 步数上限">
             {STEPS.map((n) => (
-              <button key={n} aria-pressed={maxSteps === n} disabled={locked}
-                      onClick={() => onMaxStepsChange(n)}>
+              <button key={n} aria-pressed={maxSteps === n} onClick={() => onMaxStepsChange(n)}>
                 {n}
               </button>
             ))}
-          </div>
-        </div>
+          </Group>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
-          {meta && (
-            <span className="hidden text-[11px] text-[rgb(var(--fg-faint))] lg:inline">
-              {(meta.pool.count / 1000).toFixed(1)}k 词 · {meta.models.agent.split("/").pop()}
+          {poolCount ? (
+            <span className="hidden text-[11px] tabular-nums text-[rgb(var(--fg-faint))] md:inline">
+              {poolCount.toLocaleString()} 词
             </span>
-          )}
+          ) : null}
           <button
             className="btn btn-ghost !px-2 !py-1.5"
             onClick={onToggleTheme}
@@ -114,11 +97,25 @@ export function Header(props: Props) {
           >
             {dark ? "☀" : "☾"}
           </button>
-          <button className="btn btn-primary" onClick={onNew} disabled={locked}>
-            {phase === "idle" ? "开始对局" : "新开一局"}
-          </button>
+          {/* 开局前不放按钮：人机对战输入第一个词即开局，出题模式提交谜底即开局 */}
+          {phase !== "idle" && (
+            <button className="btn btn-primary !py-1.5" onClick={onNew}>
+              重开
+            </button>
+          )}
         </div>
       </div>
     </header>
+  );
+}
+
+function Group({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[11px] text-[rgb(var(--fg-faint))]">{label}</span>
+      <div className="segmented" role="group" aria-label={label}>
+        {children}
+      </div>
+    </div>
   );
 }

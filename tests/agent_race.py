@@ -94,16 +94,16 @@ def run(target: str | None, steps: int, human_words: list[str]) -> None:
         if end:
             print(f"答案    : {end.get('target')}")
             print(f"结果    : {end.get('winner')}")
-            print(f"人类    : {end.get('human_turns')} 回合 / {end.get('human_guesses')} 词，"
+            print(f"人类    : 猜中用 {end.get('human_words')} 词（共交 {end.get('human_guesses')}），"
                   f"命中={end.get('human_solved')}")
-            print(f"Agent   : {end.get('agent_turns')} 回合 / {end.get('agent_guesses')} 词，"
+            print(f"Agent   : 猜中用 {end.get('agent_words')} 词（共交 {end.get('agent_guesses')}），"
                   f"命中={end.get('agent_solved')}")
         else:
             snap = c.get(f"/api/race/{rid}").json()
             print(f"（未收到 race_end，用快照判断）finished={snap['finished']}")
             print(f"结果    : {snap.get('winner')}")
-            print(f"人类    : {snap.get('human_turns')} 回合 / {snap.get('human_guesses')} 词")
-            print(f"Agent   : {snap.get('agent_turns')} 回合 / {snap.get('agent_guesses')} 词")
+            print(f"人类    : 猜中用 {snap.get('human_words')} 词（共交 {snap.get('human_guesses')}）")
+            print(f"Agent   : 猜中用 {snap.get('agent_words')} 词（共交 {snap.get('agent_guesses')}）")
         kinds = {}
         for e in events:
             kinds[e["type"]] = kinds.get(e["type"], 0) + 1

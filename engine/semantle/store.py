@@ -114,6 +114,11 @@ class Store:
         agent = Game(target=word)
         race = Race(human_game=human, agent_game=agent, mode=mode, max_steps=max_steps)
         with self._lock:
+            # 新开一局意味着上一局已经没人看了，让它的 Agent 循环退出，
+            # 否则后台会继续为一个废弃的对局烧 token。
+            for old in self.races.values():
+                if not old.finished and not old.agent_done:
+                    old.aborted = True
             self.races[race.race_id] = race
         return race
 

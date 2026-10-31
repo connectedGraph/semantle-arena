@@ -163,9 +163,9 @@ def _snapshot(race: Race) -> Dict[str, Any]:
         "agent_solved": race.agent_game.finished,
         "human_guesses": race.human_game.guess_count,
         "agent_guesses": race.agent_game.guess_count,
-        # 胜负口径：回合数（Agent 一次多词算一回合）
-        "human_turns": race.human_game.until_solved_turns(),
-        "agent_turns": race.agent_game.until_solved_turns(),
+        # 胜负口径：猜中时用掉的词数（少者胜）
+        "human_words": race.human_game.until_solved_guesses(),
+        "agent_words": race.agent_game.until_solved_guesses(),
         "human_history": [g.to_dict() for g in race.human_game.history],
         "agent_history": [g.to_dict() for g in race.agent_game.history],
     }
@@ -198,6 +198,18 @@ def human_giveup(race_id: str) -> Dict[str, Any]:
     return {"human_done": True, "finished": race.finished, "winner": race.winner}
 
 
+@router.post("/race/{race_id}/abort")
+def abort_race(race_id: str) -> Dict[str, Any]:
+    """放弃这一局（前端换设置/关页面时调）。
+
+    只让 Agent 循环退出，不写结算——这一局本就不该有结果。
+    存在的意义是别让没人看的对局在后台继续烧 token。
+    """
+    race = _get_race(race_id)
+    race.aborted = True
+    return {"ok": True}
+
+
 def _settle(race: Race) -> None:
     """结算；若已结束，向事件队列投一条 race_end。
 
@@ -217,8 +229,8 @@ def _settle(race: Race) -> None:
             "winner": winner,
             "human_guesses": race.human_game.guess_count,
             "agent_guesses": race.agent_game.guess_count,
-            "human_turns": race.human_game.until_solved_turns(),
-            "agent_turns": race.agent_game.until_solved_turns(),
+            "human_words": race.human_game.until_solved_guesses(),
+            "agent_words": race.agent_game.until_solved_guesses(),
             "human_solved": race.human_game.finished,
             "agent_solved": race.agent_game.finished,
         })
@@ -242,7 +254,8 @@ async def _run_agent(race: Race) -> None:
     await emit({"type": "start", "max_steps": race.max_steps})
     runner = AgentRunner(get_store(), LLMClient(), race.agent_game, emit,
                          max_steps=race.max_steps,
-                         should_stop=lambda: race.human_game.finished and race.human_done)
+                         should_stop=lambda: race.aborted
+                         or (race.human_game.finished and race.human_done))
     try:
         result = await runner.run()
     except Exception as exc:  # noqa: BLE001

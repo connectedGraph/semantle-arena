@@ -183,6 +183,44 @@ def test_agent_tools() -> None:
     check("命中原词后 game.finished", game.finished is True)
 
 
+def test_word_count_rule() -> None:
+    """胜负按猜中时用掉的词数比，不按回合、不按时间。"""
+    print("胜负口径（词数）")
+    sys.path.insert(0, str(ROOT / "engine"))
+    from semantle.models import Game, Guess, Race
+
+    def play(words, target="苹果", step=None):
+        g = Game(target=target)
+        for i, w in enumerate(words):
+            g.add(Guess(order=i + 1, word=w, similarity=0.5, rank=10, level="hot",
+                        is_target=(w == target), step=step))
+        return g
+
+    def race(human, agent, human_done=True):
+        r = Race(human_game=play(human), agent_game=play(agent, step=1))
+        r.agent_done, r.human_done = True, human_done
+        return r
+
+    # Agent 一个回合交 5 个词命中，人类第 3 个词命中：按回合 Agent 赢，按词数人类赢
+    r = race(["香蕉", "水果", "苹果"], ["汽车", "电脑", "河流", "香蕉", "苹果"])
+    check("一回合多词按词数计，人类 3 词胜 Agent 5 词", r.settle() == "human", str(r.winner))
+
+    r = race(["水果", "苹果"], ["香蕉", "苹果"])
+    check("词数相同为平局", r.settle() == "tie", str(r.winner))
+
+    # 命中后继续猜的词不计入
+    g = play(["苹果", "香蕉", "橘子"])
+    check("命中之后的词不计入", g.until_solved_guesses() == 1, str(g.until_solved_guesses()))
+
+    # Agent 3 词命中，人类已用 3 词未中 → 不用等人类放弃，直接结算
+    r = race(["香蕉", "水果", "橘子"], ["汽车", "香蕉", "苹果"], human_done=False)
+    check("人类追不上时自动结算", r.settle() == "agent" and r.human_done, str(r.winner))
+
+    # 人类 2 词未中，还有机会打平，不能提前结算
+    r = race(["香蕉", "水果"], ["汽车", "香蕉", "苹果"], human_done=False)
+    check("仍可打平时不提前结算", r.settle() is None and not r.finished, str(r.winner))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--spawn", action="store_true", help="自己拉起后端")
@@ -211,6 +249,7 @@ def main() -> None:
             test_scoring(c)
             test_settlement(c)
         test_agent_tools()
+        test_word_count_rule()
     finally:
         if proc is not None:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)

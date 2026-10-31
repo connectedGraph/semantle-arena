@@ -6,7 +6,9 @@
 - Race      : 人类与 Agent 猜同一个谜底的对抗容器
 - TurnEvent : 推给前端的事件（思考 / 工具调用 / 结果）
 
-胜负口径：猜中答案所用的**猜测次数**少者胜。LLM 回得快是速度优势，不参与比较。
+胜负口径：猜中答案所**用掉的词数**少者胜。
+不按耗时比——模型回得快是速度优势，不是游戏能力；
+也不按轮次比——那样 Agent 一次丢 64 个词就算「一轮」，人类一次只能一个，没法公平。
 """
 from __future__ import annotations
 
@@ -103,34 +105,20 @@ class Game:
         """猜过的不同词数（含重复提交的旧结果去重前的原始条数）。"""
         return len(self.history)
 
-    @property
-    def turn_count(self) -> int:
-        """消耗的回合数。
+    def until_solved_guesses(self) -> int:
+        """猜中那一刻为止用掉的词数。
 
-        Agent 一侧一次工具调用可以提交几十个词，但那只算一个回合——
-        回合才是「思考代价」，词数不是。人类的每次提交都是独立回合。
+        胜负就按这个数比：少者胜。人类每次提交一个词，Agent 一次可以交
+        一批——所以 Agent 的真实成本天然更高，这是有意的（它靠并行搜索换词数，
+        不是靠聪明）。
+        猜中之后的词不计入——否则先猜中的人反而可能因为继续试探而「输」。
         """
-        steps = {g.step for g in self.history if g.step is not None}
-        human_like = sum(1 for g in self.history if g.step is None)
-        return len(steps) + human_like
-
-    def until_solved_turns(self) -> int:
-        """猜中那一刻为止消耗的回合数。
-
-        猜中之后的猜测不计入胜负判定——否则先猜中的人反而可能因为
-        后续继续猜测而「输」。
-        """
-        turns = 0
-        counted: set = set()
+        n = 0
         for g in self.history:
-            if g.step is None:
-                turns += 1
-            elif g.step not in counted:
-                counted.add(g.step)
-                turns += 1
+            n += 1
             if g.is_target:
                 break
-        return turns
+        return n
 
     def add(self, guess: Guess) -> None:
         self.history.append(guess)
@@ -162,6 +150,9 @@ class Race:
     winner: Optional[Literal["human", "agent", "tie"]] = None
     agent_done: bool = False
     human_done: bool = False
+    # 前端开了新一局（切档位/换模式）时置位：旧局的 Agent 循环看到就退出，
+    # 免得后台还在为没人看的一局烧 token。
+    aborted: bool = False
     # SSE 事件队列。
     # 用标准库 queue.Queue 而不是 asyncio.Queue：投递方可能是 FastAPI 的线程池
     # （同步端点），也可能是事件循环里的协程，跨线程 put 只有 queue.Queue 安全。
@@ -189,10 +180,25 @@ class Race:
             except queue.Empty:
                 pass
 
+    def human_cannot_win(self) -> bool:
+        """Agent 已命中，且人类已用掉不少于 Agent 的词数还没命中 → 胜负已定。
+
+        按词数比的直接推论：Agent 用 N 个词命中，人类第 N 个词命中是平局，
+        用完 N 个词还没命中就既赢不了也平不了，没必要让玩家猜到天荒地老才结算。
+        所以判据是「已用词数 >= N 且未命中」。
+        """
+        if self.mode != "versus" or not self.agent_game.finished:
+            return False
+        if self.human_game.finished:
+            return False
+        return self.human_game.guess_count >= self.agent_game.until_solved_guesses()
+
     def settle(self) -> Optional[str]:
         """结算。只有双方都结束时才有结果。"""
         if self.finished:
             return self.winner
+        if self.human_cannot_win():
+            self.human_done = True
         if self.mode == "versus" and not (self.agent_done and self.human_done):
             return None
         if self.mode == "challenge" and not self.agent_done:
@@ -204,9 +210,9 @@ class Race:
         if self.mode == "challenge":
             self.winner = "agent" if agent_solved else "tie"
         elif agent_solved and human_solved:
-            # 比回合数：Agent 一次 submit 多词仍算一回合，人类每次算一回合
-            ah = self.agent_game.until_solved_turns()
-            hh = self.human_game.until_solved_turns()
+            # 比词数：谁猜中时用掉的词少谁赢
+            ah = self.agent_game.until_solved_guesses()
+            hh = self.human_game.until_solved_guesses()
             self.winner = "agent" if ah < hh else "human" if hh < ah else "tie"
         elif agent_solved:
             self.winner = "agent"

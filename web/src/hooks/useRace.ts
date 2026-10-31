@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import type {
   AgentEvent, GuessRecord, GuessRow, Level, LogEntry, Mode, RaceSnapshot,
 } from "../types";
-import { createRace, eventSource, getRace, giveUp, sendGuess, startAgent } from "../lib/api";
+import { abortRace, createRace, eventSource, getRace, giveUp, sendGuess, startAgent } from "../lib/api";
 
 interface State {
   phase: "idle" | "running" | "finished";
@@ -14,8 +14,9 @@ interface State {
 
   human: Record<string, GuessRecord>;
   agent: Record<string, GuessRecord>;
-  humanTurns: number;
-  agentTurns: number;
+  /** 已提交的词数（Agent 侧不含重复提交，命中那一刻为止的口径与后端一致） */
+  humanWords: number;
+  agentWords: number;
   humanDone: boolean;
   agentDone: boolean;
   humanSolved: boolean;
@@ -23,7 +24,8 @@ interface State {
 
   step: number;
   logs: LogEntry[];
-  showAgent: boolean;
+  /** 是否公开 Agent 的猜测与推理。默认关闭——对局中看对手答案就没得比了。 */
+  revealAgent: boolean;
   winner: "human" | "agent" | "tie" | null;
 
   error: string | null;
@@ -37,7 +39,7 @@ type Action =
   | { type: "humanGuess"; guess: GuessRecord; done: boolean }
   | { type: "humanGiveup" }
   | { type: "event"; event: AgentEvent }
-  | { type: "toggleAgent" }
+  | { type: "setReveal"; value: boolean }
   | { type: "error"; message: string | null }
   | { type: "busy"; value: boolean }
   | { type: "restore"; snapshot: RaceSnapshot };
@@ -51,15 +53,15 @@ const EMPTY: State = {
   maxSteps: 30,
   human: {},
   agent: {},
-  humanTurns: 0,
-  agentTurns: 0,
+  humanWords: 0,
+  agentWords: 0,
   humanDone: false,
   agentDone: false,
   humanSolved: false,
   agentSolved: false,
   step: 0,
   logs: [],
-  showAgent: true,
+  revealAgent: false,
   winner: null,
   error: null,
   busy: false,
@@ -70,23 +72,20 @@ const MAX_LOGS = 240;
 function addGuess(
   map: Record<string, GuessRecord>,
   guess: GuessRecord,
-): Record<string, GuessRecord> {
-  const key = guess.word;
-  const prev = map[key];
-  // 同一个词重复猜：保留第一次的结果（次数理应只算一次）
-  if (prev) return map;
-  return { ...map, [key]: guess };
+): { map: Record<string, GuessRecord>; added: boolean } {
+  if (map[guess.word]) return { map, added: false };
+  return { map: { ...map, [guess.word]: guess }, added: true };
 }
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "reset":
       return { ...EMPTY, mode: action.mode, maxSteps: action.maxSteps,
-               targetLength: action.targetLength, showAgent: state.showAgent };
+               targetLength: action.targetLength, revealAgent: state.revealAgent };
     case "created":
       return {
         ...EMPTY,
-        showAgent: state.showAgent,
+        revealAgent: state.revealAgent,
         raceId: action.raceId,
         mode: action.mode,
         maxSteps: action.maxSteps,
@@ -95,10 +94,11 @@ function reducer(state: State, action: Action): State {
     case "running":
       return { ...state, phase: "running", busy: false };
     case "humanGuess": {
-      const human = addGuess(state.human, action.guess);
+      const { map, added } = addGuess(state.human, action.guess);
       return {
         ...state,
-        human,
+        human: map,
+        humanWords: state.humanWords + (added ? 1 : 0),
         humanDone: action.done || state.humanDone,
         humanSolved: state.humanSolved || action.guess.is_target,
         busy: false,
@@ -106,8 +106,8 @@ function reducer(state: State, action: Action): State {
     }
     case "humanGiveup":
       return { ...state, humanDone: true, busy: false };
-    case "toggleAgent":
-      return { ...state, showAgent: !state.showAgent };
+    case "setReveal":
+      return { ...state, revealAgent: action.value };
     case "error":
       return { ...state, error: action.message, busy: false };
     case "busy":
@@ -120,7 +120,7 @@ function reducer(state: State, action: Action): State {
       for (const g of snap.agent_history) agent[g.word] = g;
       return {
         ...EMPTY,
-        showAgent: state.showAgent,
+        revealAgent: snap.finished,
         raceId: snap.race_id,
         mode: snap.mode,
         maxSteps: snap.max_steps,
@@ -129,12 +129,12 @@ function reducer(state: State, action: Action): State {
         phase: snap.finished ? "finished" : "running",
         human,
         agent,
+        humanWords: snap.human_words,
+        agentWords: snap.agent_words,
         humanDone: snap.human_done,
         agentDone: snap.agent_done,
         humanSolved: snap.human_solved,
         agentSolved: snap.agent_solved,
-        humanTurns: snap.human_turns,
-        agentTurns: snap.agent_turns,
         winner: snap.winner,
       };
     }
@@ -182,12 +182,14 @@ function applyEvent(state: State, ev: AgentEvent): State {
         rows: ev.rows,
         text: summarize(ev.rows),
       });
-      // 工具结果里出现的新词，同步到 Agent 猜词表
+      // 工具结果里出现的新词，同步到 Agent 猜词表。
+      // reused 是「这个词之前猜过」，不增加词数——与后端 until_solved_guesses 同口径。
       let agent = state.agent;
       let solved = state.agentSolved;
+      let added = 0;
       for (const row of ev.rows ?? []) {
         if (row.reused) continue;
-        agent = addGuess(agent, {
+        const res = addGuess(agent, {
           order: Object.keys(agent).length + 1,
           word: row.word,
           similarity: row.similarity_pct / 100,
@@ -199,9 +201,11 @@ function applyEvent(state: State, ev: AgentEvent): State {
           source: "agent",
           at: Date.now() / 1000,
         });
+        agent = res.map;
+        if (res.added) added += 1;
         if (row.is_target) solved = true;
       }
-      return { ...state, logs, agent, agentSolved: solved };
+      return { ...state, logs, agent, agentWords: state.agentWords + added, agentSolved: solved };
     }
 
     case "solved":
@@ -221,10 +225,12 @@ function applyEvent(state: State, ev: AgentEvent): State {
         winner: ev.winner,
         humanDone: true,
         agentDone: true,
+        // 结算时自动揭晓 Agent 的猜测与轨迹：比赛结束了，藏就没意义了
+        revealAgent: true,
         humanSolved: ev.human_solved,
         agentSolved: ev.agent_solved,
-        humanTurns: ev.human_turns ?? state.humanTurns,
-        agentTurns: ev.agent_turns ?? state.agentTurns,
+        humanWords: ev.human_solved ? ev.human_words || state.humanWords : state.humanWords,
+        agentWords: ev.agent_solved ? ev.agent_words || state.agentWords : state.agentWords,
       };
 
     case "error":
@@ -265,9 +271,19 @@ function summarize(rows: GuessRow[] | undefined): string {
     : `${rows.length} 条结果`;
 }
 
+export interface BeginOpts {
+  mode?: Mode;
+  maxSteps?: number;
+  targetWord?: string;
+  minLen?: number;
+  maxLen?: number;
+}
+
 export function useRace() {
   const [state, dispatch] = useReducer(reducer, EMPTY);
   const esRef = useRef<EventSource | null>(null);
+  // 用 ref 拿最新 raceId：begin 之后立刻 guess 时，state 还没重渲染
+  const raceRef = useRef<string | null>(null);
 
   const closeStream = useCallback(() => {
     esRef.current?.close();
@@ -301,10 +317,13 @@ export function useRace() {
 
   useEffect(() => closeStream, [closeStream]);
 
+  /** 开一局，返回 race_id（失败返回 null）。 */
   const begin = useCallback(
-    async (mode: Mode, maxSteps: number, opts?: { targetWord?: string;
-      minLen?: number; maxLen?: number }) => {
+    async (mode: Mode, maxSteps: number, opts?: BeginOpts): Promise<string | null> => {
+      // 上一局还没跑完就别留着了：Agent 循环会一直烧模型调用
+      if (raceRef.current) void abortRace(raceRef.current);
       closeStream();
+      raceRef.current = null;
       dispatch({ type: "reset", mode, maxSteps, targetLength: opts?.minLen ?? 2 });
       dispatch({ type: "busy", value: true });
       try {
@@ -315,6 +334,7 @@ export function useRace() {
           minLen: opts?.minLen,
           maxLen: opts?.maxLen,
         });
+        raceRef.current = snap.race_id;
         dispatch({
           type: "created",
           raceId: snap.race_id,
@@ -325,41 +345,57 @@ export function useRace() {
         openStream(snap.race_id);
         dispatch({ type: "running" });
         await startAgent(snap.race_id);
+        return snap.race_id;
       } catch (err) {
         dispatch({ type: "error", message: (err as Error).message });
+        return null;
       }
     },
     [closeStream, openStream],
   );
 
+  const guessIn = useCallback(async (id: string, word: string) => {
+    dispatch({ type: "busy", value: true });
+    try {
+      const res = await sendGuess(id, word);
+      dispatch({ type: "humanGuess", guess: res.guess, done: res.human_done });
+      return res.guess;
+    } catch (err) {
+      dispatch({ type: "error", message: (err as Error).message });
+      return null;
+    }
+  }, []);
+
+  /** 猜一个词；还没开局就先开局再猜，省掉「先点开始」这一步。 */
   const guess = useCallback(
-    async (word: string) => {
-      if (!state.raceId) return;
-      dispatch({ type: "busy", value: true });
-      try {
-        const res = await sendGuess(state.raceId, word);
-        dispatch({ type: "humanGuess", guess: res.guess, done: res.human_done });
-      } catch (err) {
-        dispatch({ type: "error", message: (err as Error).message });
+    async (word: string, opts?: BeginOpts) => {
+      const id = raceRef.current;
+      if (!id) {
+        const created = await begin(opts?.mode ?? "versus", opts?.maxSteps ?? 30, opts);
+        if (created) await guessIn(created, word);
+        return;
       }
+      await guessIn(id, word);
     },
-    [state.raceId],
+    [begin, guessIn],
   );
 
   const giveup = useCallback(async () => {
-    if (!state.raceId) return;
+    const id = raceRef.current;
+    if (!id) return;
     dispatch({ type: "busy", value: true });
     try {
-      await giveUp(state.raceId);
+      await giveUp(id);
       dispatch({ type: "humanGiveup" });
     } catch (err) {
       dispatch({ type: "error", message: (err as Error).message });
     }
-  }, [state.raceId]);
+  }, []);
 
   const restore = useCallback(async (id: string) => {
     try {
       const snap = await getRace(id);
+      raceRef.current = snap.race_id;
       dispatch({ type: "restore", snapshot: snap });
       if (!snap.finished) openStream(id);
     } catch (err) {
@@ -367,13 +403,27 @@ export function useRace() {
     }
   }, [openStream]);
 
+  const setReveal = useCallback((value: boolean) => {
+    dispatch({ type: "setReveal", value });
+  }, []);
+
+  /** 回到空棋盘（换模式时用）：不新开局，等用户自己提交第一个词或谜底。 */
+  const reset = useCallback((mode: Mode) => {
+    const old = raceRef.current;
+    if (old) void abortRace(old);   // 别让没人看的对局在后台继续烧 token
+    closeStream();
+    raceRef.current = null;
+    dispatch({ type: "reset", mode, maxSteps: 30, targetLength: 2 });
+  }, [closeStream]);
+
   return {
     state,
     begin,
     restore,
     guess,
     giveup,
-    toggleAgent: () => dispatch({ type: "toggleAgent" }),
+    setReveal,
+    reset,
     clearError: () => dispatch({ type: "error", message: null }),
   };
 }

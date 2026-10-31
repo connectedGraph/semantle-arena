@@ -37,8 +37,8 @@ export interface RaceSnapshot {
   agent_solved: boolean;
   human_guesses: number;
   agent_guesses: number;
-  human_turns: number;
-  agent_turns: number;
+  human_words: number;
+  agent_words: number;
   human_history: GuessRecord[];
   agent_history: GuessRecord[];
 }
@@ -60,8 +60,8 @@ export type AgentEvent =
       winner: "human" | "agent" | "tie" | null;
       human_guesses: number;
       agent_guesses: number;
-      human_turns: number;
-      agent_turns: number;
+      human_words: number;
+      agent_words: number;
       human_solved: boolean;
       agent_solved: boolean;
     }

@@ -55,6 +55,11 @@ export const sendGuess = (id: string, word: string) =>
 export const giveUp = (id: string) =>
   req<{ human_done: boolean }>(`/race/${id}/giveup`, { method: "POST" });
 
+/** 让这一局的 Agent 循环退出（换设置/重开时调，避免后台继续烧 token）。 */
+export const abortRace = (id: string) =>
+  req<{ ok: boolean }>(`/race/${id}/abort`, { method: "POST" })
+    .catch(() => ({ ok: false }));   // 对局可能已经结束，失败无所谓
+
 export const getMeta = () => req<Meta>("/meta");
 
 export const getRace = (id: string) => req<RaceSnapshot>(`/race/${id}`);
