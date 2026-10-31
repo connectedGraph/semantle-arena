@@ -17,6 +17,9 @@
 
 产出：17751 词（二字 15090 / 三字 2338 / 四字 323）。
 
+之后按**具象度**再切三档（`scripts/build_tiers.py`）：
+精简 3000 / 标准 8000 / 完整 16033。选词方法见 [docs/engine.md](../../docs/engine.md#词库档位)。
+
 ## 五个走过弯路的口径决策
 
 ### 1. 词性白名单是错的
@@ -121,7 +124,7 @@ webdict 没有词性标注，`安德烈 / 塞尔维亚 / 中国 / 北京` 都在
 python scripts/build_wordlist.py --min-freq 100 --dry-run
 # 写文件并重建向量
 python scripts/build_wordlist.py
-python scripts/build_embeddings.py
+python scripts/build_tiers.py
 # 复核常见词覆盖
 python scripts/audit_pool.py
 ```

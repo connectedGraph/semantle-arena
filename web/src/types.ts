@@ -1,16 +1,22 @@
 export type Level = "exact" | "hot" | "warm" | "cold";
+export type Tier = "small" | "medium" | "full";
 
 export interface GuessRecord {
   order: number;
   word: string;
   similarity: number;
+  /** 归一化显示百分比（本局最接近的词 = 99%） */
   similarity_pct: number;
+  /** 原始余弦百分比，用于排查 */
+  raw_pct: number;
   rank: number | null;
   level: Level;
   is_target: boolean;
   source: "human" | "agent";
   at: number;
   step?: number | null;
+  /** 池外词：分数由汉字向量平均估算，只是近似 */
+  approx?: boolean;
 }
 
 export type Mode = "versus" | "challenge";
@@ -64,6 +70,7 @@ export type AgentEvent =
 export interface GuessRow {
   word: string;
   similarity_pct: number;
+  raw_pct?: number;
   rank: number | null;
   level: Level;
   is_target: boolean;
@@ -85,8 +92,16 @@ export interface Meta {
     generated_at: string;
     params: { min_freq: number; min_len: number; max_len: number };
     count: number;
+    /** 全池词数（当前档位可能小于它） */
+    pool_total: number;
     by_length: Record<string, number>;
+    tier: Tier;
+    tiers: Record<string, number>;
+    vector_coverage: number;
+    engine: string;
   };
   config: { char_penalty: number; semantic_blend: number };
   models: { embedding: string; agent: string };
+  tier: Tier;
+  tiers: Record<string, number>;
 }

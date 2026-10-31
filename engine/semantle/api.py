@@ -95,10 +95,40 @@ def meta() -> Dict[str, Any]:
         "pool": engine.meta,
         "config": engine.config,
         "models": {
-            "embedding": "bge-base-zh-v1.5 (int8, onnx)",
+            "embedding": engine.meta["engine"],
             "agent": LLMClient().model,
         },
+        # 当前档位 + 可选档位，前端据此渲染切换器
+        "tier": engine.tier,
+        "tiers": engine.available_tiers(),
     }
+
+
+class TierIn(BaseModel):
+    tier: str = Field(..., min_length=1)
+
+    @field_validator("tier")
+    @classmethod
+    def _v(cls, v: str) -> str:
+        if v not in ("small", "medium", "full"):
+            raise ValueError("tier 只能是 small / medium / full")
+        return v
+
+
+@router.post("/tier")
+def set_tier(body: TierIn) -> Dict[str, Any]:
+    """切换词库档位。
+
+    注意：档位是**全局**的（单进程内存引擎），切了会影响正在进行的所有对局。
+    这是有意的简化——多用户场景下应该按对局隔离，见 README 的已知限制。
+    """
+    store = get_store()
+    try:
+        store.engine.set_tier(body.tier)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"tier": store.engine.tier, "count": store.engine.size,
+            "tiers": store.engine.available_tiers()}
 
 
 @router.get("/pool/sample")

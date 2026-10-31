@@ -33,12 +33,26 @@ class Guess:
     is_target: bool
     source: Literal["human", "agent"] = "human"
     at: float = field(default_factory=time.time)
+    # 池外词用汉字向量平均近似，分数只作参考——界面要标出来，
+    # 否则玩家会以为「干饭搭子只有 37%」意味着不接近，其实是估算
+    approx: bool = False
+    # 归一化后的显示百分比（相对于本局最接近的那个词）。
+    # 腾讯词向量的原始余弦普遍偏低，直接显示会误导；排序仍用原始分。
+    shown_pct: Optional[float] = None
     # Agent 侧：这是第几个对话回合产生的猜测（人类侧为 None）。
     # 一次 guess 可以包含多个词，但只消耗回合预算，不按词数计。
     step: Optional[int] = None
 
     @property
     def similarity_pct(self) -> float:
+        """展示用百分比：归一化到本局最接近的词 = 99%。"""
+        if self.shown_pct is not None:
+            return self.shown_pct
+        return round(self.similarity * 100, 2)
+
+    @property
+    def raw_pct(self) -> float:
+        """原始余弦百分比，用于排查。"""
         return round(self.similarity * 100, 2)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -47,12 +61,14 @@ class Guess:
             "word": self.word,
             "similarity": round(self.similarity, 6),
             "similarity_pct": self.similarity_pct,
+            "raw_pct": self.raw_pct,
             "rank": self.rank,
             "level": self.level,
             "is_target": self.is_target,
             "source": self.source,
             "at": self.at,
             "step": self.step,
+            "approx": self.approx,
         }
 
 

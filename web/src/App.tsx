@@ -7,8 +7,8 @@ import { PoolSheet } from "./components/PoolSheet";
 import { Hero } from "./components/Hero";
 import { useRace } from "./hooks/useRace";
 import { useTheme } from "./hooks/useTheme";
-import { getMeta } from "./lib/api";
-import type { Meta, Mode } from "./types";
+import { getMeta, setTier } from "./lib/api";
+import type { Meta, Mode, Tier } from "./types";
 
 export default function App() {
   const { theme, toggle } = useTheme();
@@ -23,10 +23,29 @@ export default function App() {
   const [poolOpen, setPoolOpen] = useState(false);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [settlementDismissed, setSettlementDismissed] = useState(false);
+  const [tier, setTierState] = useState<Tier>("small");
 
   useEffect(() => {
-    getMeta().then(setMeta).catch(() => undefined);
+    getMeta()
+      .then((m) => {
+        setMeta(m);
+        if (m.tier) setTierState(m.tier);
+      })
+      .catch(() => undefined);
   }, []);
+
+  // 切档位：改后端全局引擎 + 刷新 meta（词数会变）
+  const onTierChange = async (next: Tier) => {
+    if (next === tier) return;
+    try {
+      await setTier(next);
+      setTierState(next);
+      const m = await getMeta();
+      setMeta(m);
+    } catch {
+      /* 失败就保持原档位，界面上 meta 仍是旧值 */
+    }
+  };
 
   // ?race=<id> 恢复一局（对局可分享/可刷新不丢）
   useEffect(() => {
@@ -78,6 +97,8 @@ export default function App() {
         meta={meta}
         locked={locked}
         phase={state.phase}
+        tier={tier}
+        onTierChange={onTierChange}
       />
 
       <main className="mx-auto w-full max-w-[1400px] px-5 pb-5">

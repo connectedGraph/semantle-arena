@@ -36,8 +36,9 @@ wait_health() {
 check_env() {
   [ -x "$VENV/bin/python" ] || { echo "缺少 .venv，先跑 ./install.sh"; exit 1; }
   [ -f "$DIR/data/wordlists/pool.json" ] || { echo "缺少词池，先跑 ./install.sh"; exit 1; }
-  [ -f "$DIR/data/vectors/pool_vectors.npy" ] || { echo "缺少向量，先跑 ./install.sh"; exit 1; }
-  [ -f "$DIR/data/model/model_base_int8.onnx" ] || { echo "缺少模型，先跑 ./install.sh"; exit 1; }
+  [ -f "$DIR/data/wordlists/tiers.json" ] || { echo "缺少档位，先跑 ./install.sh"; exit 1; }
+  [ -f "$DIR/data/wordvectors/embedding.kv.vectors.npy" ] \
+    || { echo "缺少词向量，先跑 ./install.sh"; exit 1; }
 }
 
 load_env() {

@@ -37,17 +37,19 @@ app.include_router(router)
 @app.on_event("startup")
 def _warmup() -> None:
     store = get_store()
+    e = store.engine
     logging.getLogger(__name__).info(
-        "引擎就绪：%d 词，向量 %s，模型 %s",
-        store.engine.size, store.engine.matrix.shape,
-        store.engine.config,
+        "引擎就绪：档位 %s，%d 词，矩阵 %s，向量覆盖 %.1f%%，配置 %s",
+        e.tier, e.size, e.matrix.shape,
+        len(e.coverage) / max(1, e.pool_meta["count"]) * 100, e.config,
     )
 
 
 @app.get("/health")
 def health() -> dict:
     store = get_store()
-    return {"ok": True, "words": store.engine.size,
+    return {"ok": True, "tier": store.engine.tier,
+            "words": store.engine.size,
             "matrix": list(store.engine.matrix.shape)}
 
 

@@ -70,7 +70,8 @@ def main() -> None:
         avg = sum(r for _, r in ranks if r) / max(1, sum(1 for _, r in ranks if r))
         detail.append(f"{target:4s} 平均名次 {avg:6.0f}  {shown}")
 
-    print("答案 → 常识相关词的名次（越小越对；「缺」= 该词不在谜底池）")
+    print(f"档位：{store.engine.tier}（{store.engine.size} 词）")
+    print("答案 → 常识相关词的名次（越小越对；「缺」= 该词不在当前档位）")
     for line in detail:
         print("  " + line)
 

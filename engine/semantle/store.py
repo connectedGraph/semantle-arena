@@ -22,8 +22,10 @@ from fastapi import HTTPException
 from .embedder import Engine, get_engine
 from .models import Game, Guess, Race, level_of
 
-# 名次表只保留前这么多，超出显示 "3000+"
-RANK_CAP = 3000
+# 名次表不设上限：整档词全部入表。
+# 早先只存前 3000 名，超出的显示 "3000+"——但那会掩盖真实排名，
+# 玩家猜 `大夫` 得到 "3000+" 时无法判断是排在 3001 还是 15500。
+# 现在腾讯向量下建全表只要 ~15ms，没必要省。
 
 
 class Store:
@@ -41,11 +43,17 @@ class Store:
         否则所有猜词的名次都会整体后移一位，且 rank=1 永远只属于答案本身，
         玩家看到「最近才 rank 2」会误以为还没接近。
         """
-        nb = self.engine.neighbors(game.target, k=min(RANK_CAP + 1, self.engine.size))
-        nb = [(w, raw, adj) for (w, raw, adj) in nb if w != game.target][:RANK_CAP]
+        nb = self.engine.neighbors(game.target, k=self.engine.size)
+        nb = [(w, raw, adj) for (w, raw, adj) in nb if w != game.target]
         game._ranks = {w: i + 1 for i, (w, _, _) in enumerate(nb)}
         game._rank_scores = [s for _, _, s in nb]   # 降序，供二分
         game._rank_ready = True
+
+        # 显示用的归一化基准：第 1 名（最接近的词）的原始相似度。
+        # 腾讯词向量的余弦绝对值偏低——苹果的第 10 名只有 0.578，
+        # 直接显示百分比会让玩家以为「才 58%，还很远」，其实已经是前十了。
+        # 归一化后：最接近的词 = 99%，后面的按比例递推，观感接近 Semantle 原版。
+        game._top_sim = float(nb[0][1]) if nb else 1.0
 
     def _rank_for(self, game: Game, word: str, adj: float) -> Optional[int]:
         if word in game._ranks:
@@ -53,7 +61,7 @@ class Store:
         # 池外词：排序分在本局邻居表中的插入位置
         scores: List[float] = game._rank_scores  # type: ignore[attr-defined]
         pos = bisect.bisect_right([-s for s in scores], -adj)
-        return pos + 1 if pos < RANK_CAP else None
+        return pos + 1
 
     # ---------- 猜词 ----------
 
@@ -63,18 +71,24 @@ class Store:
         if not game._rank_ready:
             self._prime(game)
 
-        target_vec = engine.vector(game.target)
-        raw = engine.raw_similarity(target_vec, word)
+        target_vec, _ = engine.vector(game.target)
+        raw, approx = engine.raw_similarity(target_vec, word)
         adj = engine.adjusted(game.target, word, raw)
         is_target = word == game.target
         rank = 1 if is_target else self._rank_for(game, word, adj)
+
+        # 归一化显示分：除以本局第一名（上限 1.0），保留真实分用于排序
+        top = getattr(game, "_top_sim", 1.0) or 1.0
+        shown = min(0.999, raw / top) if not is_target else 1.0
 
         g = Guess(
             order=game.guess_count + 1,
             word=word,
             similarity=raw,
+            shown_pct=round(shown * 100, 2),
             rank=rank,
             level=level_of(rank, is_target),
+            approx=approx,
             is_target=is_target,
             source=source,  # type: ignore[arg-type]
             step=step,

@@ -26,12 +26,12 @@
 ## 快速开始
 
 ```bash
-./install.sh        # 依赖 + 模型(98MB) + 词表 + 向量 + 前端
+./install.sh        # 依赖 + 词向量(114MB) + 词表 + 档位 + 前端
 ./run.sh            # → http://127.0.0.1:8010
 ```
 
-首次安装约 5 分钟（主要是 98MB 模型下载和 1.8 万词编码）。
-`install.sh` 在 HuggingFace 不通时自动切 `hf-mirror`。
+词向量会优先从本机已有的 `chinese-semantle` 项目复制；没有的话按
+`install.sh` 的提示下载（腾讯 AI Lab 中文词向量，约 114MB）。
 
 Agent 需要一个 OpenAI 兼容的模型服务：
 
@@ -64,18 +64,23 @@ cp .env.example .env
 本版从 jieba + webdict 双源按词性/词频/字数/排除规则编译，**不靠人工审美**。
 详见 [词表构建](./data/wordlists/README.md)。
 
-### 词向量覆盖不全 → 句向量
+### 词向量覆盖不全 → 池外近似
 
 腾讯词向量 14.3 万词，`披萨 / 长颈鹿 / 贝多芬 / 躺平 / 社畜` 都不在，
 猜这些词直接报「不在词表」。
 
-换成 BGE 中文句向量（int8 ONNX，98MB，纯 CPU，无需 torch），
-**任何汉字串都能编码**——这支撑了「猜词不限」。
+现在池外词用**组成汉字的向量平均**近似（`干饭搭子` = `干/饭/搭/子` 四个字向量求平均），
+结果标「估算」徽标——这支撑了「猜词不限」，同时不让玩家误以为近似分是精确分。
+
+> 中途试过换成 BGE 句向量（理由是句向量对任意文本都能编码），
+> 实测在猜词场景下**明显更差**：前 50 命中 68% vs 腾讯词向量的 86%，
+> 而且给出的是同义词变体堆（「粘贴」的近邻是黏贴/黏合/黏连/粘合/粘结）。
+> 已回退，详见 [docs/engine.md](./docs/engine.md)。
 
 ## 三个设计决定
 
 **1. 谜底受限，猜词不限。**
-谜底从 1.8 万词的品质池里抽，但你输入什么都能算相似度。
+谜底从当前档位的词库里抽（默认精简档 3000 词），但你输入什么都能算相似度。
 猜「干饭搭子」这种词池里没有的表达也照常工作。
 
 **2. 胜负按回合，不按词数。**
@@ -90,7 +95,8 @@ Agent 一次可以猜 64 个词，但那只是「一个回合」——它代表�
 
 | 项 | 取值 |
 |---|---|
-| 谜底总数 | **17,751**（二字 15,090 / 三字 2,338 / 四字 323） |
+| 词池总数 | 17,751（词向量覆盖 16,033，占 90.3%） |
+| 档位 | 精简 3,000 / 标准 8,000 / 完整 16,033（默认精简） |
 | 主源 | jieba `dict.txt`，词频 ≥ 200 |
 | 副源 | webdict（22 万条），词频 ≥ 3000，只补 `n / nz` |
 | 名词类 | `n / nz / vn / an / s / t / b / z` 直接收 |
@@ -101,7 +107,7 @@ Agent 一次可以猜 64 个词，但那只是「一个回合」——它代表�
 ```bash
 python scripts/build_wordlist.py --min-freq 100 --dry-run   # 试别的档位
 python scripts/build_wordlist.py                            # 写入
-python scripts/build_embeddings.py                          # 重算向量（约 3 分钟）
+python scripts/build_tiers.py                               # 重算档位
 python scripts/audit_pool.py                                # 复核常见词覆盖
 ```
 
@@ -111,12 +117,12 @@ python scripts/audit_pool.py                                # 复核常见词覆
 
 | 层 | 技术 |
 |---|---|
-| 语义引擎 | BGE `bge-base-zh-v1.5` int8 ONNX + onnxruntime（纯 CPU） |
+| 语义引擎 | 腾讯 AI Lab 中文词向量（200 维，14.3 万词，纯 numpy 点积） |
 | 后端 | FastAPI + SSE 事件流 |
 | 前端 | React 19 + TypeScript + Vite + Tailwind v4 |
 | Agent | OpenAI 兼容 tool calling，任意模型可换 |
 
-运行时依赖只有 `fastapi / uvicorn / onnxruntime / tokenizers / numpy / httpx`。
+运行时依赖只有 `fastapi / uvicorn / numpy / httpx`——没有 torch，没有神经网络推理。
 
 ## 文档
 
@@ -146,14 +152,14 @@ python scripts/audit_pool.py                                # 复核常见词覆
 |---|---|
 | [jieba](https://github.com/fxsjy/jieba) `dict.txt` | MIT |
 | [webdict](https://github.com/ling0322/webdict) | CC BY-SA 3.0（部分源自 CC-CEDICT） |
-| [BAAI/bge-base-zh-v1.5](https://huggingface.co/BAAI/bge-base-zh-v1.5) | MIT |
-| [Xenova/bge-base-zh-v1.5](https://huggingface.co/Xenova/bge-base-zh-v1.5) | MIT（ONNX 量化版） |
+| [腾讯 AI Lab 中文词向量](https://ai.tencent.com/ailab/nlp/en/embedding.html) | 官方发布，学术免费 |
 
 本项目代码 MIT。
 
 ## 已知限制
 
 - 单进程内存会话，重启丢对局（替换 `store.py` 的 `Store` 即可持久化）
-- BGE 对 2 字词区分度有限，60%~70% 这一段接近噪声，所以界面优先显示名次
+- 2 字词的余弦普遍挤在 0.6~0.8，区分度有限，所以界面优先显示名次而非百分比
+- 池外词只有汉字平均的近似语义，会标「估算」徽标
 - 名次表按「排序分」算，池外词的近似名次是插入位置，不是精确排名
 - 四字谜底只有 323 个，比二字稀疏得多

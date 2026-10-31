@@ -192,6 +192,7 @@ function applyEvent(state: State, ev: AgentEvent): State {
           word: row.word,
           similarity: row.similarity_pct / 100,
           similarity_pct: row.similarity_pct,
+          raw_pct: row.raw_pct ?? row.similarity_pct,
           rank: row.rank,
           level: row.level,
           is_target: row.is_target,

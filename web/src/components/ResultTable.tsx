@@ -91,6 +91,14 @@ export function ResultTable({ rows, side, masked, className }: Props) {
                     {hidden ? "•••" : r.word}
                   </span>
                   {r.is_target && <span className="ml-2 text-xs level-text">命中</span>}
+                  {r.approx && !hidden && (
+                    <span
+                      className="ml-2 rounded px-1 py-0.5 text-[10px] text-[rgb(var(--fg-faint))] ring-1 ring-[rgb(var(--border))]"
+                      title="这个词不在词库里，分数由汉字向量平均估算，仅供参考"
+                    >
+                      估算
+                    </span>
+                  )}
                 </td>
                 <td className="bg-[rgb(var(--fg)/0.03)] px-2 py-1.5 text-right">
                   <RankChip rank={r.rank} hidden={hidden} />

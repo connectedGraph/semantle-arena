@@ -4,7 +4,9 @@ __pycache__/
 logs/
 .env
 
-# 大文件：模型与向量不入库（install.sh 会重新下载 / 重新生成）
+# 大文件：词向量与中间产物不入库（install.sh 会重新准备）
+data/wordvectors/*
+!data/wordvectors/.gitkeep
 data/model/*
 !data/model/.gitkeep
 data/vectors/*.npy

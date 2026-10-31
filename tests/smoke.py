@@ -66,10 +66,36 @@ def test_meta(c: httpx.Client) -> None:
     check("GET /api/meta 200", r.status_code == 200)
     m = r.json()
     count = m["pool"]["count"]
-    check(f"词池规模合理 ({count})", count > 5000, "应大于 5000")
+    pool_total = m["pool"].get("pool_total", count)
+    # 当前档位可能远小于全池（精简档 3000），所以两个层级都要查
+    check(f"全池规模合理 ({pool_total})", pool_total > 5000, "全池应大于 5000")
+    check(f"当前档位词数合理 ({count})", 1000 <= count <= pool_total,
+          f"应在 1000~{pool_total}")
+    check("档位信息完整", set(m["tiers"]) >= {"small", "medium", "full"},
+          str(m.get("tiers")))
     check("二字谜底多于三字",
           m["pool"]["by_length"].get("2", 0) > m["pool"]["by_length"].get("3", 0))
     check("返回引擎参数", "char_penalty" in m["config"])
+
+
+def test_tier(c: httpx.Client) -> None:
+    print("词库档位")
+    original = c.get("/api/meta").json()["tier"]
+
+    r = c.post("/api/tier", json={"tier": "medium"})
+    check("切到 medium 200", r.status_code == 200)
+    body = r.json()
+    check("medium 词数多于 small", body["count"] > body["tiers"]["small"],
+          f"{body['count']} vs {body['tiers']['small']}")
+
+    r = c.post("/api/tier", json={"tier": "small"})
+    check("切回 small", r.json()["count"] == r.json()["tiers"]["small"])
+
+    bad = c.post("/api/tier", json={"tier": "nonexistent"})
+    check("非法档位被拒 422", bad.status_code == 422, str(bad.status_code))
+
+    # 恢复原档位
+    c.post("/api/tier", json={"tier": original})
 
 
 def test_scoring(c: httpx.Client) -> None:
@@ -181,6 +207,7 @@ def main() -> None:
     try:
         with _client(BASE) as c:
             test_meta(c)
+            test_tier(c)
             test_scoring(c)
             test_settlement(c)
         test_agent_tools()

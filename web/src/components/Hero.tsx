@@ -41,7 +41,11 @@ export function Hero({ meta, onStart, mode }: Props) {
         </p>
 
         <div className="mt-9 grid gap-3 sm:grid-cols-3">
-          <Stat value={count ? count.toLocaleString() : "—"} label="谜底词池" sub="名词/动词/形容词" />
+          <Stat value={count ? count.toLocaleString() : "—"} label="当前词库" sub={
+            meta?.pool.tier === "small" ? "精简档 · 日常具象词"
+              : meta?.pool.tier === "medium" ? "标准档"
+                : "完整档"
+          } />
           <Stat value={two ? two.toLocaleString() : "—"} label="二字谜底" sub="主力玩法" />
           <Stat value={three ? three.toLocaleString() : "—"} label="三字谜底" sub="更长也更好玩" />
         </div>

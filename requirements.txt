@@ -1,7 +1,7 @@
-# 运行时：纯 CPU，无 torch
+# 运行时：纯 CPU，无 torch / 无 onnxruntime
+# 语义引擎用腾讯 AI Lab 中文词向量（gensim KeyedVectors 格式），
+# 由 engine/semantle/embedder.py 直接读 .npy 矩阵 + 键表，不需要 gensim 运行时。
 fastapi>=0.115
 uvicorn[standard]>=0.30
-onnxruntime>=1.19
-tokenizers>=0.20
 numpy>=1.26
 httpx>=0.27

@@ -1,4 +1,4 @@
-import type { GuessRecord, Meta, Mode, RaceSnapshot } from "../types";
+import type { GuessRecord, Meta, Mode, RaceSnapshot, Tier } from "../types";
 
 const BASE = "/api";
 
@@ -58,6 +58,12 @@ export const giveUp = (id: string) =>
 export const getMeta = () => req<Meta>("/meta");
 
 export const getRace = (id: string) => req<RaceSnapshot>(`/race/${id}`);
+
+export const setTier = (tier: Tier) =>
+  req<{ tier: Tier; count: number; tiers: Record<string, number> }>("/tier", {
+    method: "POST",
+    body: JSON.stringify({ tier }),
+  });
 
 export const getPoolSample = (length?: number) =>
   req<{ count: number; sample: string[] }>(
