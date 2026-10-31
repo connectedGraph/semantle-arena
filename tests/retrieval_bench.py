@@ -38,6 +38,7 @@ def main() -> None:
     store = get_store()
     engine = store.engine
     total = hit10 = hit50 = hit200 = 0
+    not_in_pool = out_of_range = 0
     detail: list[str] = []
 
     for target, probes in CASES.items():
@@ -49,6 +50,12 @@ def main() -> None:
             ranks.append((p, r))
             total += 1
             if r is None:
+                # 分不清「词池里没有」和「排名在 3000 之外」——两者含义完全不同：
+                # 前者是词表覆盖问题，后者才是引擎排序问题。
+                if store.engine.in_pool(p):
+                    out_of_range += 1
+                else:
+                    not_in_pool += 1
                 continue
             if r <= 10:
                 hit10 += 1
@@ -56,21 +63,30 @@ def main() -> None:
                 hit50 += 1
             if r <= 200:
                 hit200 += 1
-        shown = ", ".join(f"{p}:{r if r else '3000+'}" for p, r in ranks)
+        shown = ", ".join(
+            f"{p}:{r if r else ('3000+' if store.engine.in_pool(p) else '缺')}"
+            for p, r in ranks
+        )
         avg = sum(r for _, r in ranks if r) / max(1, sum(1 for _, r in ranks if r))
         detail.append(f"{target:4s} 平均名次 {avg:6.0f}  {shown}")
 
-    print("答案 → 常识相关词的名次（越小越对）")
+    print("答案 → 常识相关词的名次（越小越对；「缺」= 该词不在谜底池）")
     for line in detail:
         print("  " + line)
 
+    in_pool = total - not_in_pool
     print()
     print(f"前 10 命中 {hit10}/{total} = {hit10 / total:.0%}")
     print(f"前 50 命中 {hit50}/{total} = {hit50 / total:.0%}")
     print(f"前 200 命中 {hit200}/{total} = {hit200 / total:.0%}")
+    if not_in_pool:
+        print(f"\n注：{not_in_pool}/{total} 个探针词不在谜底池，"
+              f"{out_of_range} 个在池但排到 3000 之外")
+        print(f"   只看在池的词，前 200 命中 {hit200}/{in_pool} = {hit200 / max(1, in_pool):.0%}")
 
     # 判定线：前 200 命中率过半，说明语义场是对的；前 50 有相当比例则体感可用
-    ok = hit200 / total >= 0.6 and hit50 / total >= 0.3
+    denom = max(1, in_pool)
+    ok = hit200 / denom >= 0.6 and hit50 / denom >= 0.3
     print()
     print("✓ 语义检索质量达标" if ok else "✗ 语义检索质量不足，需要调引擎")
     sys.exit(0 if ok else 1)

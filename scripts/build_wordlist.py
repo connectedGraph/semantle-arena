@@ -25,17 +25,34 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "data" / "sources"
 OUT = ROOT / "data" / "wordlists" / "pool.json"
 
-# 词性过滤分两级，因为 jieba 的词性标注对短词并不可靠：
-#   `西瓜 / 吉他 / 登山 / 青春` 标成 ns（地名），`小提琴 / 滑雪` 标成 nr（人名），
-#   `相机` 标成 d（副词）——这些都是明显的常用名词。
-# 所以只硬排除「一定不是谜底」的类别：
-#   人名 nr/nrfg/nrt、机构 nt、数词 m、量词 q、代词 r、虚词 c/p/u/y/e/o、方位 f、成语 i、惯用语 l
+# 词性过滤分两层，因为「能不能当谜底」和「是不是词」是两件事。
+#
+# 第一层 HARD_EXCLUDE_POS：一定不是谜底的类别，无论词频多高都排除。
+#   人名 nr*、机构 nt、数词 m、量词 q、代词 r、虚词 c/p/u/y/e/o、方位 f、成语 i、惯用语 l
+#
+# 第二层：按品类给不同的词频门槛（见 POS_MIN_FREQ_MULT）。
+#   为什么不能简单砍掉动词/形容词：`警察 / 后悔 / 害怕 / 开心 / 焦虑` 都是
+#   很好的谜底（Semantle 原版也收情绪词），一律排除会把游戏抽空。
+#   但把动词整片按低门槛收也不行——实测随机谜底抽到 `挂职 / 出资 / 增持 /
+#   批准 / 打开 / 判断`，玩家没法靠「联想一个东西」逼近。
+#   所以：高频的 v/a 收（信息量够、多数人认识），低频的直接丢。
+#
+# 不收 d（副词）：`也许 / 激烈 / 一直` 这类没有实体指称，任何词频都没法玩。
+ANSWER_POS = {"n", "nz", "vn", "an", "s", "t", "b", "z"}
+# 动词/形容词：只有足够高频才收（倍数作用于该源的 min_freq）
+SOFT_POS = {"v", "a", "ad", "vd"}
+# 绝对门槛而非倍数：两个源的词频量级差一个数量级，倍数没法同时适用。
+# 400 这个值来自实测——`开心 487 / 焦虑 676 / 难过 691 / 后悔 988 / 尴尬 1430 /
+# 警察 1677 / 兴奋 2575 / 害怕 3404 / 紧张 4790` 都在线上，而
+# `挂职 / 出资 / 增持 / 批准` 这类在 200~400 之间，正好被挡掉。
+SOFT_POS_MIN_FREQ = 400
+
 HARD_EXCLUDE_POS = {
     "nr", "nrfg", "nrt", "nt", "m", "mq", "q", "r", "c", "p", "u",
     "y", "e", "o", "f", "i", "l", "zg", "eng", "x",
 }
-# 仍保留正向白名单做参数，默认不用它做硬门槛（见 keep_pos_strict）
-DEFAULT_KEEP_POS = {"n", "v", "a", "vn", "t", "s", "b", "z", "nz", "an", "ad", "vd"}
+# 保留给 --strict-pos 用（更窄的白名单，仅供实验）
+DEFAULT_KEEP_POS = {"n", "nz", "vn", "an", "s", "t", "b", "z"}
 
 # 每个源可以有自己的 min_freq：不同来源的词频量级完全不同
 # （jieba 的 200 是「比较常用」，webdict 的 200 是「几乎不出现」）
@@ -145,22 +162,45 @@ def build(sources, min_freq: int, min_len: int, max_len: int,
             if word in exclude:
                 continue
             # allow 是人工复核过的豁免：同时绕过词性与排除规则
+            soft = False
             if word in (allow or ()):
                 pass
             elif pos is not None:
-                # 有词性的源（jieba）：默认只做硬排除；strict_pos 时改成正向白名单
+                pos = pos
+            else:
+                # 无词性的源（webdict）：借 jieba 的词性表判断。
+                # jieba 没收录的默认不收——webdict 这类词里大量是短语句和专名
+                # （`黄某 / 库区 / 新网 / 首款`），除非 allow 点名。
+                pos = ref_pos.get(word)
+                if pos is None:
+                    continue
+
+            if word not in (allow or ()):
                 if strict_pos:
                     if pos not in keep_pos:
                         continue
                 elif pos in HARD_EXCLUDE_POS:
                     continue
-            else:
-                # 无词性的源：若参考表里该词是专名/数词，说明它不是普通名词
-                ref = ref_pos.get(word)
-                if ref is not None and ref in HARD_EXCLUDE_POS:
+                elif pos in SOFT_POS:
+                    soft = True
+                elif pos not in ANSWER_POS:
                     continue
-            if freq < src_min:
-                continue
+
+            # webdict 的目标是「补 jieba 漏掉的具象名词」，不是「再贡献一个词池」。
+            # 实测它的高频区几乎全是财经/新闻语料词（安排 / 安全 / 安装 / 办理 /
+            # 公司 / 市场 / 记者），当谜底没有可猜性，且把词池稀释得很快。
+            # 所以对非 jieba 源的 vn/b/z/s/t 不收，只收 n / nz。
+            if pos is not None and name != "jieba" and not soft:
+                if pos not in {"n", "nz"}:
+                    continue
+
+            # 动词/形容词按更高门槛收：高频的（警察/后悔/害怕）留，低频的丢。
+            # allow 点名的词不受词频门槛限制——它们是被人工确认为好谜底的
+            # （内疚 194、弹奏 126 这类，词频低但确实是玩家想得到的词）。
+            if word not in (allow or ()):
+                need = max(src_min, SOFT_POS_MIN_FREQ) if soft else src_min
+                if freq < need:
+                    continue
             if rules and word not in (allow or ()) and any(rule(word) for rule in rules):
                 blocked += 1
                 continue
