@@ -1,0 +1,326 @@
+@import "tailwindcss";
+
+/* ============================================================
+   设计令牌
+   暗色玻璃拟态 + 霓虹渐变。颜色全部走 CSS 变量，
+   明暗两套只在这里切换，组件不写死颜色。
+   ============================================================ */
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+:root {
+  color-scheme: light;
+
+  --bg-base: 250 250 252;
+  --bg-veil: 255 255 255;
+  --fg: 17 18 24;
+  --fg-muted: 92 96 112;
+  --fg-faint: 138 142 158;
+  --border: 20 22 34 / 0.10;
+  --border-strong: 20 22 34 / 0.18;
+  --surface: 255 255 255 / 0.72;
+  --surface-hi: 255 255 255 / 0.92;
+
+  --accent: 124 92 255;
+  --accent-2: 0 194 224;
+  --accent-3: 255 92 168;
+
+  --hot: 255 122 46;
+  --warm: 234 179 8;
+  --cold: 130 138 158;
+  --exact: 34 197 94;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --bg-base: 7 8 12;
+  --bg-veil: 12 14 20;
+  --fg: 236 238 246;
+  --fg-muted: 152 158 176;
+  --fg-faint: 106 112 130;
+  --border: 255 255 255 / 0.09;
+  --border-strong: 255 255 255 / 0.18;
+  --surface: 255 255 255 / 0.045;
+  --surface-hi: 255 255 255 / 0.085;
+
+  --accent: 150 118 255;
+  --accent-2: 64 224 255;
+  --accent-3: 255 108 186;
+
+  --hot: 255 138 64;
+  --warm: 250 204 21;
+  --cold: 120 128 148;
+  --exact: 52 211 122;
+}
+
+* {
+  border-color: rgb(var(--border));
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--bg-base));
+  color: rgb(var(--fg));
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 内容层要压在背景之上，所以背景不能是 -1（会被 body 的底色盖住） */
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- 背景：极光 + 网格 ---------- */
+
+.arena-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;          /* 背景层：在 #root(z=1) 之下，但在 body 底色之上 */
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.arena-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(620px 460px at 8% -6%, rgb(var(--accent) / 0.95), transparent 72%),
+    radial-gradient(560px 420px at 96% -4%, rgb(var(--accent-2) / 0.72), transparent 70%),
+    radial-gradient(760px 520px at 62% 108%, rgb(var(--accent-3) / 0.62), transparent 72%),
+    radial-gradient(420px 380px at 34% 46%, rgb(var(--accent) / 0.30), transparent 78%);
+  filter: blur(48px) saturate(160%);
+  animation: aurora 26s ease-in-out infinite alternate;
+}
+
+.arena-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgb(var(--fg) / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--fg) / 0.045) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 78%);
+}
+
+@keyframes aurora {
+  0%   { transform: translate3d(-3%, -2%, 0) scale(1);      opacity: 0.9; }
+  50%  { transform: translate3d(3%, 2%, 0) scale(1.08);     opacity: 1; }
+  100% { transform: translate3d(-1%, 4%, 0) scale(1.03);    opacity: 0.85; }
+}
+
+/* ---------- 玻璃卡片 ---------- */
+
+.glass {
+  position: relative;
+  background: linear-gradient(
+    165deg,
+    rgb(255 255 255 / 0.055) 0%,
+    rgb(255 255 255 / 0.025) 45%,
+    rgb(255 255 255 / 0.045) 100%
+  );
+  border: 1px solid rgb(255 255 255 / 0.10);
+  border-radius: 20px;
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  box-shadow:
+    0 1px 0 0 rgb(255 255 255 / 0.09) inset,
+    0 -1px 0 0 rgb(0 0 0 / 0.25) inset,
+    0 32px 80px -40px rgb(0 0 0 / 0.9),
+    0 2px 12px -2px rgb(0 0 0 / 0.4);
+}
+
+.glass-hi {
+  background: rgb(20 22 32 / 0.92);
+  border-color: rgb(255 255 255 / 0.14);
+}
+
+/* 卡片顶部的一道高光，模拟玻璃边缘 */
+.glass-edge::before {
+  content: "";
+  position: absolute;
+  inset: 0 12% auto 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent,
+    rgb(var(--accent-2) / 0.55), rgb(var(--accent) / 0.55), transparent);
+  opacity: 0.9;
+}
+
+/* ---------- 文字渐变 ---------- */
+
+.text-gradient {
+  background: linear-gradient(100deg,
+    rgb(var(--fg)) 8%, rgb(var(--accent)) 46%, rgb(var(--accent-2)) 92%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------- 接近度配色 ---------- */
+
+.level-exact { --level: var(--exact); }
+.level-hot   { --level: var(--hot); }
+.level-warm  { --level: var(--warm); }
+.level-cold  { --level: var(--cold); }
+
+.level-bar {
+  background: linear-gradient(90deg,
+    rgb(var(--level) / 0.35), rgb(var(--level) / 0.95));
+  box-shadow: 0 0 18px rgb(var(--level) / 0.45);
+}
+
+.level-text { color: rgb(var(--level)); }
+
+.level-chip {
+  color: rgb(var(--level));
+  background: rgb(var(--level) / 0.12);
+  border: 1px solid rgb(var(--level) / 0.28);
+}
+
+/* ---------- 按钮 ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 12px;
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 550;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: transform 0.16s ease, background 0.18s ease,
+    border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.16s ease;
+  border: 1px solid rgb(var(--border-strong));
+  background: rgb(var(--surface-hi));
+  color: rgb(var(--fg));
+}
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; }
+
+.btn-primary {
+  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(135deg, rgb(var(--accent)), rgb(var(--accent-2)));
+  box-shadow: 0 8px 28px -10px rgb(var(--accent) / 0.85);
+}
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 12px 36px -10px rgb(var(--accent) / 1);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: rgb(var(--border));
+}
+.btn-ghost:hover:not(:disabled) { background: rgb(var(--surface)); }
+
+/* ---------- 分段控件 ---------- */
+
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 12px;
+  background: rgb(var(--fg) / 0.06);
+  border: 1px solid rgb(var(--border));
+}
+
+.segmented > button {
+  border: 0;
+  background: transparent;
+  color: rgb(var(--fg-muted));
+  border-radius: 9px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+.segmented > button[aria-pressed="true"] {
+  background: rgb(var(--surface-hi));
+  color: rgb(var(--fg));
+  box-shadow: 0 1px 8px -2px rgb(0 0 0 / 0.4);
+}
+
+/* ---------- 输入 ---------- */
+
+.field {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--border-strong));
+  background: rgb(var(--fg) / 0.04);
+  color: rgb(var(--fg));
+  padding: 0.62rem 0.85rem;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.field::placeholder { color: rgb(var(--fg-faint)); }
+.field:focus {
+  outline: none;
+  border-color: rgb(var(--accent) / 0.75);
+  box-shadow: 0 0 0 3px rgb(var(--accent) / 0.16);
+}
+
+/* ---------- 滚动条 ---------- */
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--fg) / 0.2) transparent;
+}
+.scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: rgb(var(--fg) / 0.16);
+  border-radius: 99px;
+}
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 动效 ---------- */
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+.pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg,
+    rgb(var(--fg) / 0.05) 25%, rgb(var(--fg) / 0.12) 50%, rgb(var(--fg) / 0.05) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arena-backdrop::before,
+  .rise,
+  .pulse-dot,
+  .shimmer { animation: none; }
+  .btn:hover:not(:disabled) { transform: none; }
+}

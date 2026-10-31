@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Semantle Arena · 人机语义猜词对抗</title>
+    <meta name="description" content="中文语义猜词的人机对抗：你和 Agent 猜同一个隐藏词，比谁猜中的次数少。" />
+    <script>
+      // 首屏防闪烁：在样式加载前定主题。
+      // 与 useTheme 一致——首次默认深色，不跟随系统浅色偏好。
+      (function () {
+        var t = localStorage.getItem("arena-theme");
+        document.documentElement.classList.toggle("dark", t !== "light");
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

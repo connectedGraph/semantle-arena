@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.py[cod]
+logs/
+.env
+
+# 大文件：模型与向量不入库（install.sh 会重新下载 / 重新生成）
+data/model/*
+!data/model/.gitkeep
+data/vectors/*.npy
+data/vectors/*.npz
+
+# 词源文件较大（7.5MB），但入库可离线重建；如需瘦身可改为 install.sh 下载
+
+# 词表源文件较大，保留（约 8MB），便于离线重建
+# data/sources/*.txt
+
+web/node_modules/
+web/dist/
+web/.vite/
